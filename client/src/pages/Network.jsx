@@ -10,6 +10,7 @@ export default function Network({
   selectedShipment = null,
   recommendedRoute = null,
   onRecalculateRoute = null,
+  onSimulateDisruption = null,
   onSelectShipment = null
 }) {
   const [selectedRouteFilter, setSelectedRouteFilter] = useState(null);

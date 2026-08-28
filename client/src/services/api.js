@@ -237,6 +237,152 @@ export const api = {
   },
 
   /**
+   * Simulate Sudden Disruption (Weather, Traffic, Hub Congestion, Connectivity Loss)
+   */
+  async simulateDisruption(shipmentId, disruptionType = 'WEATHER', options = {}) {
+    const rawType = disruptionType.toUpperCase();
+
+    // Special Case: Connectivity Loss directly activates offline mode & queues locally
+    if (rawType.includes('CONNECTIVITY') || rawType.includes('OFFLINE')) {
+      offlineStorage.setSimulatedOffline(true);
+      const shipments = offlineStorage.getCachedShipments();
+      const s = shipments.find(item => item.id === shipmentId || item.trackingNumber === shipmentId) || shipments[0];
+      
+      const localEvents = offlineStorage.getCachedEvents();
+      const newEvent = {
+        id: 'EVT-OFF-' + Date.now(),
+        timestamp: new Date().toISOString(),
+        type: 'SYNC',
+        shipment_id: s?.trackingNumber || null,
+        message: `[CONNECTIVITY LOSS] Telemetry link dropped at ${s?.currentLocation || 'Denver'} Hub. Operating in local cache mode.`,
+        source: 'SYSTEM'
+      };
+      localEvents.unshift(newEvent);
+      offlineStorage.saveCachedEvents(localEvents);
+
+      return {
+        success: true,
+        disruptionType: 'CONNECTIVITY_LOSS',
+        delayAdded: 0,
+        isOfflineTrigger: true,
+        data: s,
+        isOffline: true
+      };
+    }
+
+    if (isOffline()) {
+      // Offline local handling
+      const shipments = offlineStorage.getCachedShipments();
+      const index = shipments.findIndex(s => s.id === shipmentId || s.trackingNumber === shipmentId);
+      if (index === -1) throw new Error('Shipment not found in local cache');
+
+      const s = shipments[index];
+      let delayAdded = 0;
+      let eventPrefix = '';
+
+      if (rawType.includes('WEATHER')) {
+        delayAdded = options.minutes || 45;
+        eventPrefix = `[WEATHER DISRUPTION] Severe weather along ${s.currentLocation} → ${s.destination} corridor`;
+      } else if (rawType.includes('TRAFFIC')) {
+        delayAdded = options.minutes || 35;
+        eventPrefix = `[TRAFFIC DISRUPTION] Highway congestion detected on ${s.currentLocation} → ${s.destination} corridor`;
+      } else if (rawType.includes('HUB') || rawType.includes('CONGESTION')) {
+        delayAdded = options.minutes || 25;
+        eventPrefix = `[HUB CONGESTION] Sorting facility backlog at ${s.currentLocation} Hub`;
+      } else {
+        delayAdded = options.minutes || 30;
+        eventPrefix = `[DISRUPTION] Operational slowdown detected`;
+      }
+
+      const newDelay = (s.delayMinutes || 0) + delayAdded;
+      const newEta = addMinutesToTimeString(s.eta, delayAdded);
+      const newStatus = evaluateShipmentStatus(newEta, s.deadline, newDelay);
+
+      // Local Dijkstra recommendation
+      const network = offlineStorage.getCachedNetwork();
+      let recommendedRoute = s.recommendedRoute;
+      let travelTimeMinutes = null;
+      if (newStatus === 'AT_RISK' || newStatus === 'DELAYED') {
+        const dijkstraRes = calculateClientDijkstra(s.currentLocation, s.destination, network.routes || []);
+        recommendedRoute = dijkstraRes.path;
+        travelTimeMinutes = dijkstraRes.distance;
+      }
+
+      const updated = {
+        ...s,
+        delayMinutes: newDelay,
+        eta: newEta,
+        status: newStatus,
+        recommendedRoute,
+        updatedAt: new Date().toISOString()
+      };
+      shipments[index] = updated;
+      offlineStorage.saveCachedShipments(shipments);
+
+      // Create local events
+      const localEvents = offlineStorage.getCachedEvents();
+      localEvents.unshift({
+        id: 'EVT-OFF-' + Date.now(),
+        timestamp: new Date().toISOString(),
+        type: rawType.includes('HUB') ? 'HUB_UPDATE' : 'DELAY_EVENT',
+        shipment_id: s.trackingNumber,
+        message: `[OFFLINE] ${eventPrefix}: +${delayAdded}m delay for ${s.trackingNumber} (New ETA: ${newEta}, Status: ${newStatus.replace('_', ' ')})`,
+        source: 'SYSTEM'
+      });
+
+      if (recommendedRoute && recommendedRoute.length > 0) {
+        localEvents.unshift({
+          id: 'EVT-OFF-' + (Date.now() + 1),
+          timestamp: new Date().toISOString(),
+          type: 'ROUTE_UPDATE',
+          shipment_id: s.trackingNumber,
+          message: `[OFFLINE] Fastest alternative route calculated for ${s.trackingNumber}: ${recommendedRoute.join(' → ')} (${travelTimeMinutes || 230} min)`,
+          source: 'SYSTEM'
+        });
+      }
+
+      offlineStorage.saveCachedEvents(localEvents);
+
+      // Queue action for sync
+      offlineStorage.addToPendingQueue({
+        type: 'DISRUPTION',
+        shipmentId: s.id,
+        trackingNumber: s.trackingNumber,
+        payload: {
+          disruptionType: rawType,
+          minutes: delayAdded
+        }
+      });
+
+      return {
+        success: true,
+        data: updated,
+        disruptionType: rawType,
+        delayAdded,
+        newEta,
+        newStatus,
+        recommendedRoute,
+        travelTimeMinutes,
+        isOffline: true
+      };
+    }
+
+    try {
+      const res = await request(`${BASE_URL}/shipments/${shipmentId}/disruption`, {
+        method: 'POST',
+        body: JSON.stringify({
+          disruptionType: rawType,
+          minutes: options.minutes
+        })
+      });
+      return res;
+    } catch (err) {
+      offlineStorage.setSimulatedOffline(true);
+      return this.simulateDisruption(shipmentId, rawType, options);
+    }
+  },
+
+  /**
    * Recalculate Fastest Route using Dijkstra (Online OR Local Dijkstra Offline)
    */
   async recalculateRoute(shipmentId) {

@@ -11,7 +11,11 @@ import {
   AlertTriangle,
   Radio,
   Zap,
-  RotateCcw
+  RotateCcw,
+  CloudRain,
+  Car,
+  Building2,
+  WifiOff
 } from 'lucide-react';
 import { formatTime, formatDelayText, formatEventTimestamp } from '../utils/formatters';
 
@@ -19,6 +23,7 @@ export default function ShipmentDrawer({
   shipment,
   onClose,
   onSimulateDelay,
+  onSimulateDisruption = null,
   onRecalculateRoute,
   onApplyRoute,
   events = [],
@@ -272,6 +277,120 @@ export default function ShipmentDrawer({
               </button>
             </div>
           )}
+
+          {/* Sudden Shipment Disruption Simulation Control */}
+          <div className="card" style={{ padding: '16px', border: '1px solid #FED7AA', backgroundColor: '#FFFDF9' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ fontSize: '12px', fontWeight: '800', color: '#9A3412', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Zap size={14} color="#EA580C" />
+                SIMULATE DISRUPTION
+              </div>
+              <span style={{ fontSize: '10px', fontWeight: '700', backgroundColor: '#FFEDD5', color: '#C2410C', padding: '2px 6px', borderRadius: '4px' }}>
+                4 Options
+              </span>
+            </div>
+            <div style={{ fontSize: '11px', color: '#6B7280', marginBottom: '12px', lineHeight: 1.3 }}>
+              Trigger real-world conditions to test automatic travel time adjustments, risk evaluation, and Dijkstra rerouting.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              {/* Option 1: Weather */}
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => onSimulateDisruption && onSimulateDisruption(shipment.id || shipment.trackingNumber, 'WEATHER')}
+                style={{
+                  justifyContent: 'flex-start',
+                  backgroundColor: '#FFFFFF',
+                  borderColor: '#E2E8F0',
+                  color: '#1E293B',
+                  padding: '8px 10px',
+                  height: 'auto'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#0284C7'}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = '#E2E8F0'}
+                title="Weather disruption: +45m corridor delay"
+              >
+                <CloudRain size={15} color="#0284C7" style={{ flexShrink: 0 }} />
+                <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
+                  <div style={{ fontWeight: '700', fontSize: '11px' }}>1. Weather</div>
+                  <div style={{ fontSize: '10px', color: '#0284C7' }}>+45m Corridor</div>
+                </div>
+              </button>
+
+              {/* Option 2: Traffic */}
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => onSimulateDisruption && onSimulateDisruption(shipment.id || shipment.trackingNumber, 'TRAFFIC')}
+                style={{
+                  justifyContent: 'flex-start',
+                  backgroundColor: '#FFFFFF',
+                  borderColor: '#E2E8F0',
+                  color: '#1E293B',
+                  padding: '8px 10px',
+                  height: 'auto'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#D97706'}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = '#E2E8F0'}
+                title="Traffic disruption: +35m transit delay"
+              >
+                <Car size={15} color="#D97706" style={{ flexShrink: 0 }} />
+                <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
+                  <div style={{ fontWeight: '700', fontSize: '11px' }}>2. Traffic</div>
+                  <div style={{ fontSize: '10px', color: '#D97706' }}>+35m Transit</div>
+                </div>
+              </button>
+
+              {/* Option 3: Hub Congestion */}
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => onSimulateDisruption && onSimulateDisruption(shipment.id || shipment.trackingNumber, 'HUB_CONGESTION')}
+                style={{
+                  justifyContent: 'flex-start',
+                  backgroundColor: '#FFFFFF',
+                  borderColor: '#E2E8F0',
+                  color: '#1E293B',
+                  padding: '8px 10px',
+                  height: 'auto'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#EA580C'}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = '#E2E8F0'}
+                title="Hub Congestion: +25m processing delay"
+              >
+                <Building2 size={15} color="#EA580C" style={{ flexShrink: 0 }} />
+                <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
+                  <div style={{ fontWeight: '700', fontSize: '11px' }}>3. Hub Congestion</div>
+                  <div style={{ fontSize: '10px', color: '#EA580C' }}>+25m Sorting</div>
+                </div>
+              </button>
+
+              {/* Option 4: Connectivity Loss */}
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => onSimulateDisruption && onSimulateDisruption(shipment.id || shipment.trackingNumber, 'CONNECTIVITY_LOSS')}
+                style={{
+                  justifyContent: 'flex-start',
+                  backgroundColor: '#FFFFFF',
+                  borderColor: '#E2E8F0',
+                  color: '#1E293B',
+                  padding: '8px 10px',
+                  height: 'auto'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#DC2626'}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = '#E2E8F0'}
+                title="Connectivity Loss: Switches to local offline queue"
+              >
+                <WifiOff size={15} color="#DC2626" style={{ flexShrink: 0 }} />
+                <div style={{ textAlign: 'left', lineHeight: 1.15 }}>
+                  <div style={{ fontWeight: '700', fontSize: '11px' }}>4. Connectivity Loss</div>
+                  <div style={{ fontSize: '10px', color: '#DC2626' }}>Offline Queue</div>
+                </div>
+              </button>
+            </div>
+          </div>
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

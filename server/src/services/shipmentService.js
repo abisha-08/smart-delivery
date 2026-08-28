@@ -226,6 +226,132 @@ function updateShipmentLocation(idOrTracking, newLocation, source = 'RFID_SCANNE
 }
 
 /**
+ * Simulates a sudden shipment disruption (Weather, Traffic, Hub Congestion, Connectivity)
+ * Updates underlying travel/processing time, triggers Risk Engine evaluation,
+ * logs event in Event Service, and calculates Dijkstra recommendation when at risk.
+ */
+function simulateDisruption(idOrTracking, disruptionType, options = {}) {
+  const db = getDb();
+  const shipment = getShipmentById(idOrTracking);
+  if (!shipment) {
+    throw new Error(`Shipment ${idOrTracking} not found`);
+  }
+
+  const rawType = (disruptionType || 'WEATHER').toUpperCase();
+  let delayAdded = 0;
+  let eventType = 'DELAY_EVENT';
+  let message = '';
+  const nowStr = new Date().toISOString();
+
+  if (rawType.includes('WEATHER')) {
+    delayAdded = options.minutes || 45;
+    const corridor = `${shipment.currentLocation} → ${shipment.destination}`;
+    // Update corridor delay in routes table
+    db.prepare(`
+      UPDATE routes 
+      SET status = 'DELAYED', delay_minutes = delay_minutes + ?
+      WHERE (from_hub = ? AND to_hub = ?) OR (from_hub = ? AND to_hub = ?)
+    `).run(delayAdded, shipment.currentLocation, shipment.destination, shipment.destination, shipment.currentLocation);
+
+    message = `[WEATHER DISRUPTION] Severe weather along ${corridor} corridor: +${delayAdded}m travel delay`;
+  } else if (rawType.includes('TRAFFIC')) {
+    delayAdded = options.minutes || 35;
+    const corridor = `${shipment.currentLocation} → ${shipment.destination}`;
+    // Update corridor delay in routes table
+    db.prepare(`
+      UPDATE routes 
+      SET status = 'DELAYED', delay_minutes = delay_minutes + ?
+      WHERE (from_hub = ? AND to_hub = ?) OR (from_hub = ? AND to_hub = ?)
+    `).run(delayAdded, shipment.currentLocation, shipment.destination, shipment.destination, shipment.currentLocation);
+
+    message = `[TRAFFIC DISRUPTION] Highway congestion detected on ${corridor} corridor: +${delayAdded}m travel delay`;
+  } else if (rawType.includes('HUB') || rawType.includes('CONGESTION')) {
+    delayAdded = options.minutes || 25;
+    const hubName = shipment.currentLocation || 'Denver';
+    // Update hub backlog and package counts
+    db.prepare(`
+      UPDATE hubs 
+      SET package_count = package_count + 3
+      WHERE city LIKE ? OR name LIKE ?
+    `).run(`%${hubName}%`, `%${hubName}%`);
+
+    eventType = 'HUB_UPDATE';
+    message = `[HUB CONGESTION] Sorting facility backlog at ${hubName} Hub: +${delayAdded}m processing delay`;
+  } else if (rawType.includes('CONNECTIVITY') || rawType.includes('OFFLINE')) {
+    eventType = 'SYNC';
+    message = `[CONNECTIVITY LOSS] Telemetry link dropped at ${shipment.currentLocation} Hub. Operating in local cache mode.`;
+    createEvent({
+      type: 'SYNC',
+      shipmentId: shipment.trackingNumber,
+      message,
+      source: 'SYSTEM'
+    });
+    return {
+      shipment,
+      disruptionType: 'CONNECTIVITY_LOSS',
+      delayAdded: 0,
+      isOfflineTrigger: true
+    };
+  } else {
+    delayAdded = options.minutes || 30;
+    message = `[DISRUPTION] Operational disruption detected: +${delayAdded}m delay`;
+  }
+
+  // Recalculate Delay and ETA naturally
+  const newDelay = (shipment.delayMinutes || 0) + delayAdded;
+  const newEta = addMinutesToTimeString(shipment.eta, delayAdded);
+  const newStatus = evaluateShipmentStatus(newEta, shipment.deadline, newDelay);
+
+  // Automatically calculate fastest Dijkstra route if shipment enters AT_RISK or DELAYED
+  let recommendedRoute = shipment.recommendedRoute;
+  let travelTimeMinutes = null;
+  if (newStatus === 'AT_RISK' || newStatus === 'DELAYED') {
+    const bestRoute = calculateBestRoute(shipment.currentLocation, shipment.destination);
+    recommendedRoute = bestRoute.path;
+    travelTimeMinutes = bestRoute.travelTimeMinutes;
+  }
+
+  const recommendedJson = recommendedRoute ? JSON.stringify(recommendedRoute) : null;
+
+  db.prepare(`
+    UPDATE shipments 
+    SET delay_minutes = ?, eta = ?, status = ?, recommended_route_json = ?, updated_at = ?
+    WHERE id = ?
+  `).run(newDelay, newEta, newStatus, recommendedJson, nowStr, shipment.id);
+
+  // Create disruption event in timeline
+  const fullMessage = `${message} for ${shipment.trackingNumber} (New ETA: ${newEta}, Status: ${newStatus.replace('_', ' ')})`;
+  createEvent({
+    type: eventType,
+    shipmentId: shipment.trackingNumber,
+    message: fullMessage,
+    source: 'SYSTEM'
+  });
+
+  // If alternative route found, log route recommendation event
+  if (recommendedRoute && recommendedRoute.length > 0) {
+    createEvent({
+      type: 'ROUTE_UPDATE',
+      shipmentId: shipment.trackingNumber,
+      message: `Fastest alternative route calculated for ${shipment.trackingNumber}: ${recommendedRoute.join(' → ')} (${travelTimeMinutes || 230} min)`,
+      source: 'SYSTEM'
+    });
+  }
+
+  const updatedShipment = getShipmentById(shipment.id);
+
+  return {
+    shipment: updatedShipment,
+    disruptionType: rawType,
+    delayAdded,
+    newEta,
+    newStatus,
+    recommendedRoute,
+    travelTimeMinutes
+  };
+}
+
+/**
  * Dynamically calculated platform statistics
  */
 function getPlatformStats() {
@@ -247,6 +373,7 @@ module.exports = {
   getAllShipments,
   getShipmentById,
   simulateDelay,
+  simulateDisruption,
   recalculateRoute,
   applyRoute,
   updateShipmentLocation,

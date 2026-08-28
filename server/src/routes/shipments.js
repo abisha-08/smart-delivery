@@ -53,6 +53,28 @@ router.post('/:id/recalculate', (req, res) => {
   }
 });
 
+// POST /api/shipments/:id/disruption
+router.post('/:id/disruption', (req, res) => {
+  try {
+    const { disruptionType, minutes } = req.body || {};
+    const result = shipmentService.simulateDisruption(req.params.id, disruptionType, { minutes });
+    res.json({
+      success: true,
+      shipmentId: result.shipment?.id,
+      trackingNumber: result.shipment?.trackingNumber,
+      disruptionType: result.disruptionType,
+      delayAdded: result.delayAdded,
+      newEta: result.newEta,
+      newStatus: result.newStatus,
+      recommendedRoute: result.recommendedRoute,
+      travelTimeMinutes: result.travelTimeMinutes,
+      data: result.shipment
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // POST /api/shipments/:id/apply-route
 router.post('/:id/apply-route', (req, res) => {
   try {

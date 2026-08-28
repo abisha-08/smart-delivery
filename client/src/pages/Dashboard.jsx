@@ -13,6 +13,7 @@ export default function Dashboard({
   selectedShipment = null,
   recommendedRoute = null,
   onRecalculateRoute = null,
+  onSimulateDisruption = null,
   onSelectShipment,
   onViewAllEvents,
   onRefresh,
@@ -114,6 +115,7 @@ export default function Dashboard({
           <RiskPanel
             shipments={shipments}
             onSelectShipment={onSelectShipment}
+            onSimulateDisruption={onSimulateDisruption}
           />
         </div>
       </div>

@@ -1,5 +1,5 @@
 const { getDb } = require('../database/db');
-const { simulateDelay, applyRoute, recalculateRoute, updateShipmentLocation } = require('./shipmentService');
+const { simulateDelay, simulateDisruption, applyRoute, recalculateRoute, updateShipmentLocation } = require('./shipmentService');
 const { createEvent } = require('./eventService');
 
 /**
@@ -31,6 +31,13 @@ function processSyncQueue(actions = []) {
       const payload = action.payload || {};
 
       switch (type) {
+        case 'DISRUPTION':
+        case 'SIMULATE_DISRUPTION':
+          if (shipmentId) {
+            simulateDisruption(shipmentId, payload.disruptionType || 'WEATHER', payload);
+          }
+          break;
+
         case 'DELAY_EVENT':
         case 'SIMULATE_DELAY':
           if (shipmentId) {

@@ -184,6 +184,56 @@ export default function App() {
     }
   };
 
+  // Simulate Sudden Disruption Action (Weather, Traffic, Hub Congestion, Connectivity Loss)
+  const handleSimulateDisruption = async (shipmentId, disruptionType = 'WEATHER') => {
+    try {
+      const res = await api.simulateDisruption(shipmentId, disruptionType);
+      if (res?.isOfflineTrigger) {
+        setIsSimulatedOffline(true);
+        updatePendingState();
+        addToast({
+          type: 'warning',
+          title: 'Connectivity Loss Simulated',
+          message: 'Hub telemetry link dropped. Operating in fault-tolerant local cache mode.'
+        });
+        await loadData(true);
+        return res;
+      }
+
+      if (res?.data || res?.shipment) {
+        const updated = res.data || res.shipment;
+        setSelectedShipment(updated);
+
+        if (res.recommendedRoute) {
+          setRecommendedRoute(res.recommendedRoute);
+        }
+
+        const typeLabels = {
+          WEATHER: '🌧️ Weather Disruption',
+          TRAFFIC: '🚗 Traffic Disruption',
+          HUB_CONGESTION: '🏢 Hub Congestion Disruption',
+          CONNECTIVITY_LOSS: '📡 Connectivity Loss'
+        };
+        const label = typeLabels[res.disruptionType] || res.disruptionType;
+
+        addToast({
+          type: updated.status === 'DELAYED' ? 'error' : 'warning',
+          title: `${label} Injected`,
+          message: `Impact: +${res.delayAdded}m | New ETA: ${res.newEta} | Risk: ${res.newStatus.replace('_', ' ')}`
+        });
+
+        await loadData(true);
+        return res;
+      }
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: 'Disruption Error',
+        message: err.message || 'Unable to simulate disruption'
+      });
+    }
+  };
+
   // Recalculate Route using Dijkstra
   const handleRecalculateRoute = async (shipmentId) => {
     try {
@@ -454,6 +504,7 @@ export default function App() {
               selectedShipment={selectedShipment}
               recommendedRoute={recommendedRoute}
               onRecalculateRoute={handleRecalculateRoute}
+              onSimulateDisruption={handleSimulateDisruption}
               onSelectShipment={(s) => setSelectedShipment(s)}
               onViewAllEvents={() => setCurrentPage('events')}
               onRefresh={() => loadData()}
@@ -476,6 +527,7 @@ export default function App() {
               selectedShipment={selectedShipment}
               recommendedRoute={recommendedRoute}
               onRecalculateRoute={handleRecalculateRoute}
+              onSimulateDisruption={handleSimulateDisruption}
               onSelectShipment={(s) => setSelectedShipment(s)}
             />
           )}
@@ -516,6 +568,7 @@ export default function App() {
         shipment={selectedShipment}
         onClose={() => setSelectedShipment(null)}
         onSimulateDelay={handleSimulateDelay}
+        onSimulateDisruption={handleSimulateDisruption}
         onRecalculateRoute={handleRecalculateRoute}
         onApplyRoute={handleApplyRoute}
         events={events}
