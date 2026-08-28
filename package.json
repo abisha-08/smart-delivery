@@ -1,0 +1,26 @@
+{
+  "name": "ups-delay-intelligence",
+  "version": "1.0.0",
+  "description": "UPS Smart Delivery & Delay Intelligence Platform",
+  "main": "server/src/server.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "npm --prefix server start",
+    "client": "npm --prefix client run dev",
+    "build": "npm --prefix client build",
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "test": "node server/src/algorithms/dijkstra.test.js"
+  },
+  "dependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "keywords": [
+    "ups",
+    "logistics",
+    "delay-intelligence",
+    "dijkstra",
+    "offline-sync"
+  ],
+  "author": "",
+  "license": "ISC"
+}
